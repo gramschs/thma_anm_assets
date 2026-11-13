@@ -1,0 +1,25 @@
+{
+  "name": "thma_anm_assets",
+  "version": "1.0.0",
+  "description": "Interaktive Applets und Quizze zum Skript Angewandte Numerik im Maschinenbau",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/build.js && python3 scripts/generate_index.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gramschs/thma_anm_assets.git"
+  },
+  "author": "Simone Gramsch",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "svelte": "^5.56.3",
+    "vite": "^8.0.16",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "dependencies": {
+    "katex": "^0.16.11"
+  }
+}
