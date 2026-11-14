@@ -13,6 +13,7 @@ const ROOT      = resolve(__dirname, '..')
 
 // ── Alle Apps hier eintragen ──────────────────────────────────────────────────
 const ENTRIES = [
+  { chapter: 'chapter04', name: 'sekante-tangente' },
   { chapter: 'chapter07', name: 'chap07_sec00_quiz' },
 
 ]
