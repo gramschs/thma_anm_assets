@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meldungen des FTF</title>
+<!--
+  Applet zu Kapitel 7.1 (Geschwindigkeit aus Positionsdaten).
+  Das FTF fährt im Hauptgang an (0.4 m/s² bis t = 2 s, danach 0.8 m/s) und
+  meldet alle 0.5 s die zurückgelegte Strecke. Die Animation läuft in
+  Zeitlupe (ein Viertel der echten Geschwindigkeit).
+  URL-Parameter:
+    lang=en       englische Fassung (Standard: deutsch)
+    standbild=1   Endzustand in der Sicht der Leitsteuerung ohne Bedienelemente
+                  (Vorlage für das Bild im Jupyter Notebook)
+-->
+<style>
+:root {
+  --bg: #fafaf7; --surface: #ffffff; --border: #ddddd0; --text: #1c1c1a; --muted: #666660;
+  --radius: 10px; --shadow: 0 3px 16px rgba(0,0,0,.09);
+  --font-body: Georgia, "Times New Roman", serif;
+  --font-ui: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-code: SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --blau: #005A94; --orange: #E87846; --rot: #E60000; --grau: #484949; --hellgrau: #F3F4F4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+body { background: transparent; padding: 4px; }
+.applet { font-family: var(--font-body); color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden; max-width: 720px; margin: 0 auto; }
+header { padding: 14px 22px 10px; border-bottom: 1px solid var(--border); background: #f3f4f6; }
+header h1 { font-size: 1.1rem; font-weight: 400; letter-spacing: .02em; }
+header p { margin-top: 4px; font-size: .82rem; font-family: var(--font-ui); color: var(--muted); line-height: 1.5; }
+.status { padding: 9px 22px 0; font-family: var(--font-ui); font-size: .88rem; font-weight: 600; color: var(--grau); min-height: 2.1em; }
+.chart-wrap { padding: 4px 10px 6px; }
+.chart-wrap svg { width: 100%; height: auto; display: block; }
+.info-bar { display: flex; flex-wrap: wrap; border-top: 1px solid var(--border); background: #f3f4f6; font-family: var(--font-ui); }
+.info-tile { flex: 1; min-width: 150px; padding: 9px 16px; display: flex; flex-direction: column; gap: 2px;
+  border-right: 1px solid var(--border); }
+.info-tile:last-child { border-right: none; }
+.info-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.info-value { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.code { font-family: var(--font-code); font-size: 12.5px; line-height: 1.55; background: var(--hellgrau);
+  border-top: 1px solid var(--border); padding: 8px 0; overflow-x: auto; }
+.code div { padding: 1px 22px; white-space: pre; }
+.code .code-titel { font-family: var(--font-ui); font-size: .7rem; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted); padding-bottom: 4px; }
+.code .comment { color: #6a6a66; }
+.code .neu { background: #fbe1d4; border-radius: 3px; }
+.controls { padding: 10px 22px 12px; display: flex; flex-direction: column; gap: 10px;
+  border-top: 1px solid var(--border); font-family: var(--font-ui); font-size: .85rem; }
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font-family: var(--font-ui); font-size: .8rem; padding: 5px 11px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--bg); cursor: pointer; color: var(--text); }
+button:hover:not(:disabled) { background: #f0ede0; border-color: #bbb; }
+button:disabled { opacity: .4; cursor: default; }
+button.next { background: var(--orange); color: #fff; border-color: var(--orange); }
+button.next:hover:not(:disabled) { background: #d9693a; border-color: #d9693a; }
+.check { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--grau); }
+.check input { accent-color: var(--orange); width: 15px; height: 15px; cursor: pointer; }
+
+/* Szene */
+#ftf { transition: opacity .35s; }
+.leitsicht #ftf { opacity: 0; }
+.leitsicht .lot { display: none; }
+#gangtext { opacity: 0; transition: opacity .35s; }
+.leitsicht #gangtext { opacity: 1; }
+.marke { transform-box: fill-box; transform-origin: 50% 100%; }
+.marke.neu { animation: pop .35s ease-out; }
+.marke.neu line { stroke-width: 3.5; }
+@keyframes pop { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.lot { animation: verblassen 1.4s ease-in forwards; }
+@keyframes verblassen { from { opacity: .9; } to { opacity: 0; } }
+#funk { opacity: 0; }
+#funk.an { animation: funken .9s ease-out; }
+@keyframes funken { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .marke.neu, #funk.an { animation: none; }
+  .lot { animation: none; opacity: 0; }
+}
+</style>
+</head>
+<body>
+<div class="applet" id="applet">
+  <header>
+    <h1 id="titel"></h1>
+    <p id="anleitung"></p>
+  </header>
+  <div class="status" id="status" aria-live="polite"></div>
+  <div class="chart-wrap">
+    <svg id="szene" viewBox="0 0 700 300" role="img">
+      <title id="szene-titel"></title>
+    </svg>
+  </div>
+  <div class="info-bar">
+    <div class="info-tile"><span class="info-label" id="l-uhr"></span><span class="info-value" id="v-uhr"></span></div>
+    <div class="info-tile"><span class="info-label" id="l-letzte"></span><span class="info-value" id="v-letzte"></span></div>
+    <div class="info-tile"><span class="info-label" id="l-anzahl"></span><span class="info-value" id="v-anzahl"></span></div>
+  </div>
+  <div class="code" id="code"></div>
+  <div class="controls" id="steuerung">
+    <div class="button-row">
+      <button id="b-start" type="button" class="next"></button>
+      <button id="b-schritt" type="button"></button>
+      <button id="b-reset" type="button"></button>
+    </div>
+    <label class="check"><input type="checkbox" id="c-leit"><span id="l-leit"></span></label>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- Texte ----------
+  const TEXTE = {
+    de: {
+      seitentitel: 'Meldungen des FTF',
+      titel: 'Meldungen des FTF an die Leitsteuerung',
+      anleitung: 'Das FTF fährt im Hauptgang an und meldet jede halbe Sekunde, wie weit es gefahren ist. ' +
+        'Die Animation läuft in Zeitlupe mit einem Viertel der echten Geschwindigkeit.',
+      anleitungStandbild: 'Das FTF hat jede halbe Sekunde gemeldet, wie weit es gefahren ist.',
+      szene: 'Draufsicht auf den Hauptgang zwischen zwei Regalen. Das FTF fährt nach rechts. ' +
+        'Unter dem Gang liegt eine Achse für die Strecke s in Metern, auf der jede Meldung einen Strich hinterlässt.',
+      ftf: 'FTF', regal: 'Regal', achse: 's in m',
+      legende: 'Meldung: Position der Fahrzeugmitte',
+      gangtext: 'Die Leitsteuerung kennt nur die gemeldeten Positionen.',
+      uhr: 'Uhr', letzte: 'Letzte Meldung', anzahl: 'Meldungen',
+      vonNeun: n => `${n} von 9`,
+      codeTitel: 'Bei der Leitsteuerung angekommen',
+      kommentarT: '# Zeitpunkte der Meldungen in s',
+      kommentarS: '# zurückgelegte Strecke des FTF in m',
+      start: '▶ Start', pause: '❚❚ Pause', weiter: '▶ Weiter', nochmal: '▶ Noch einmal',
+      schritt: 'Bis zur nächsten Meldung', reset: 'Zurücksetzen',
+      leit: 'Sicht der Leitsteuerung (nur die Meldungen)',
+      bereit: 'Das FTF steht am Anfang des Hauptgangs.',
+      faehrt: t => `Das FTF fährt. Nächste Meldung bei t = ${t} s.`,
+      gemeldet: (t, s) => `Meldung bei t = ${t} s: Das FTF ist ${s} m weit gefahren.`,
+      angehalten: t => `Angehalten bei t = ${t} s.`,
+      ende: 'Fahrt beendet: neun Meldungen in 4 s.',
+      standbild: 'Sicht der Leitsteuerung nach 4 s',
+    },
+    en: {
+      seitentitel: 'AGV reports',
+      titel: 'Reports from the AGV to the fleet manager',
+      anleitung: 'The AGV starts off in the main aisle and reports every half second how far it has traveled. ' +
+        'The animation runs in slow motion at a quarter of the real speed.',
+      anleitungStandbild: 'The AGV reported every half second how far it had traveled.',
+      szene: 'Top view of the main aisle between two racks. The AGV drives to the right. ' +
+        'Below the aisle is an axis for the distance s in meters, where every report leaves a mark.',
+      ftf: 'AGV', regal: 'Rack', achse: 's in m',
+      legende: 'Report: position of the vehicle center',
+      gangtext: 'The fleet manager only knows the reported positions.',
+      uhr: 'Clock', letzte: 'Last report', anzahl: 'Reports',
+      vonNeun: n => `${n} of 9`,
+      codeTitel: 'Received by the fleet manager',
+      kommentarT: '# times of the reports in s',
+      kommentarS: '# distance traveled by the AGV in m',
+      start: '▶ Start', pause: '❚❚ Pause', weiter: '▶ Continue', nochmal: '▶ Again',
+      schritt: 'To next report', reset: 'Reset',
+      leit: "Fleet manager's view (reports only)",
+      bereit: 'The AGV is waiting at the start of the main aisle.',
+      faehrt: t => `The AGV is moving. Next report at t = ${t} s.`,
+      gemeldet: (t, s) => `Report at t = ${t} s: the AGV has traveled ${s} m.`,
+      angehalten: t => `Paused at t = ${t} s.`,
+      ende: 'Drive finished: nine reports in 4 s.',
+      standbild: "Fleet manager's view after 4 s",
+    },
+  };
+  const parameter = new URLSearchParams(location.search);
+  const sprache = parameter.get('lang') === 'en' ? 'en' : 'de';
+  const standbild = parameter.get('standbild') === '1';
+  const T = TEXTE[sprache];
+  document.documentElement.lang = sprache;
+  document.title = T.seitentitel;
+
+  // ---------- Fahrprofil ----------
+  const DT = 0.5;            // Zeitabstand der Meldungen in s
+  const ANZAHL = 9;          // Meldungen bei t = 0, 0.5, ..., 4 s
+  const T_ENDE = 4;          // Ende der Fahrt in s
+  const ZEITLUPE = 0.25;     // Anteil der echten Geschwindigkeit
+  const strecke = t => t <= 2 ? 0.2 * t * t : 0.8 + 0.8 * (t - 2);
+
+  // Zahlen wie im Python-Code: höchstens zwei Nachkommastellen, mindestens eine
+  function zahl(v) {
+    const r = Math.round(v * 100) / 100;
+    const s = String(r);
+    return s.includes('.') ? s : s + '.0';
+  }
+
+  // ---------- Geometrie der Szene (1 m = MASS px) ----------
+  const NS = 'http://www.w3.org/2000/svg';
+  const BLAU = '#005A94', ORANGE = '#E87846', GRAU = '#484949';
+  const MASS = 160, X0 = -0.75, RAND = 30;
+  const px = x => RAND + (x - X0) * MASS;
+  const REGAL_OBEN = [6, 32], REGAL_UNTEN = [196, 222];
+  const MITTE_Y = 114;       // Fahrzeugmitte, Gang von y = 32 bis 196
+  const ACHSE_Y = 252;
+  const LAENGE = 1.2, BREITE = 0.8;   // FTF aus Kapitel 6 in m
+
+  function el(name, attribute, eltern) {
+    const e = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attribute)) e.setAttribute(k, v);
+    if (eltern) eltern.appendChild(e);
+    return e;
+  }
+  function text(inhalt, attribute, eltern) {
+    const e = el('text', Object.assign({ 'font-family': 'Helvetica Neue, Helvetica, Arial, sans-serif' }, attribute), eltern);
+    e.textContent = inhalt;
+    return e;
+  }
+
+  const szene = document.getElementById('szene');
+  document.getElementById('szene-titel').textContent = T.szene;
+
+  // Gang und Regale
+  el('rect', { x: 0, y: REGAL_OBEN[1], width: 700, height: REGAL_UNTEN[0] - REGAL_OBEN[1], fill: '#f7f7f3' }, szene);
+  for (const [y0, y1] of [REGAL_OBEN, REGAL_UNTEN]) {
+    el('rect', { x: 0, y: y0, width: 700, height: y1 - y0, fill: '#e6e4da', stroke: '#cbc8ba' }, szene);
+    for (let x = 0.05; x < 3.3; x += 0.8) {
+      el('line', { x1: px(x), y1: y0, x2: px(x), y2: y1, stroke: '#cbc8ba' }, szene);
+    }
+    text(T.regal, { x: 10, y: (y0 + y1) / 2 + 4, 'font-size': 11, fill: '#8a887c' }, szene);
+  }
+
+  // Achse für die Strecke
+  el('line', { x1: px(-0.1), y1: ACHSE_Y, x2: px(3.15), y2: ACHSE_Y, stroke: GRAU, 'stroke-width': 1.2 }, szene);
+  el('path', { d: `M ${px(3.15) + 8} ${ACHSE_Y} l -9 -4 v 8 z`, fill: GRAU }, szene);
+  for (let k = 0; k <= 6; k++) {
+    const x = px(k * 0.5);
+    el('line', { x1: x, y1: ACHSE_Y, x2: x, y2: ACHSE_Y + 6, stroke: GRAU, 'stroke-width': 1.2 }, szene);
+    text(k === 0 ? '0' : zahl(k * 0.5), { x, y: ACHSE_Y + 21, 'font-size': 12, fill: GRAU, 'text-anchor': 'middle' }, szene);
+  }
+  text(T.achse, { x: px(3.15) + 8, y: ACHSE_Y - 10, 'font-size': 12, fill: GRAU, 'text-anchor': 'end', 'font-style': 'italic' }, szene);
+
+  // Legende
+  el('line', { x1: RAND, y1: 286, x2: RAND, y2: 296, stroke: ORANGE, 'stroke-width': 2.5 }, szene);
+  text(T.legende, { x: RAND + 8, y: 295, 'font-size': 11.5, fill: '#666660' }, szene);
+
+  // Ebene für Marken und Lote, darüber das Fahrzeug
+  const marken = el('g', {}, szene);
+  const lote = el('g', {}, szene);
+
+  const gangtext = text(T.gangtext, { id: 'gangtext', x: 350, y: MITTE_Y + 5, 'font-size': 15,
+    fill: '#666660', 'text-anchor': 'middle' }, szene);
+
+  const ftf = el('g', { id: 'ftf' }, szene);
+  const L = LAENGE * MASS, B = BREITE * MASS;
+  el('rect', { x: -L / 2, y: -B / 2, width: L, height: B, rx: 12, fill: '#dbe7f1', stroke: BLAU, 'stroke-width': 2.5 }, ftf);
+  el('rect', { x: L / 2 - 16, y: -B / 2 + 10, width: 8, height: B - 20, rx: 3, fill: BLAU, opacity: 0.75 }, ftf);
+  text(T.ftf, { x: -L / 2 + 22, y: 8, 'font-size': 22, 'font-weight': 700, fill: BLAU }, ftf);
+  el('path', { d: `M ${L / 2 - 58} -14 l 22 14 l -22 14 z`, fill: BLAU, opacity: 0.6 }, ftf);
+  // Funkwellen bei jeder Meldung
+  const funk = el('g', { id: 'funk', fill: 'none', stroke: ORANGE, 'stroke-width': 2.5, 'stroke-linecap': 'round' }, ftf);
+  for (const r of [10, 18, 26]) {
+    el('path', { d: `M ${-r * 0.7} ${-B / 2 + 34 - r * 0.7} A ${r} ${r} 0 0 1 ${r * 0.7} ${-B / 2 + 34 - r * 0.7}` }, funk);
+  }
+  // Fahrzeugmitte als Bezugspunkt der Strecke
+  el('circle', { cx: 0, cy: 0, r: 4.5, fill: ORANGE, stroke: '#fff', 'stroke-width': 1.5 }, ftf);
+
+  // ---------- Zustand ----------
+  let tSim = 0;          // Fahrzeit in s
+  let gemeldet = 0;      // Anzahl der Meldungen bisher
+  let laeuft = false;
+  let stoppBei = null;   // Zeitpunkt, an dem "Bis zur nächsten Meldung" anhält
+  let letzterRahmen = null;
+  let markenListe = [];
+
+  const $ = id => document.getElementById(id);
+  const bStart = $('b-start'), bSchritt = $('b-schritt'), bReset = $('b-reset'), cLeit = $('c-leit');
+
+  function setzeFahrzeug() {
+    ftf.setAttribute('transform', `translate(${px(strecke(tSim)).toFixed(2)} ${MITTE_Y})`);
+  }
+
+  function melde(k, mitEffekt) {
+    const x = px(strecke(k * DT));
+    for (const m of markenListe) m.classList.remove('neu');
+    const g = el('g', { class: mitEffekt ? 'marke neu' : 'marke' }, marken);
+    el('line', { x1: x, y1: ACHSE_Y - 16, x2: x, y2: ACHSE_Y, stroke: ORANGE, 'stroke-width': 2.5 }, g);
+    el('circle', { cx: x, cy: ACHSE_Y, r: 3, fill: ORANGE }, g);
+    markenListe.push(g);
+    if (mitEffekt) {
+      const lot = el('line', { class: 'lot', x1: x, y1: MITTE_Y, x2: x, y2: ACHSE_Y - 16,
+        stroke: ORANGE, 'stroke-width': 1.5, 'stroke-dasharray': '4 4' }, lote);
+      setTimeout(() => lot.remove(), 1500);
+      funk.classList.remove('an');
+      void funk.getBoundingClientRect();
+      funk.classList.add('an');
+    }
+  }
+
+  function zeigeCode() {
+    const werteT = [], werteS = [];
+    for (let k = 0; k < gemeldet; k++) {
+      const klasse = (k === gemeldet - 1 && !standbild) ? ' class="neu"' : '';
+      werteT.push(`<span${klasse}>${zahl(k * DT)}</span>`);
+      werteS.push(`<span${klasse}>${zahl(strecke(k * DT))}</span>`);
+    }
+    $('code').innerHTML =
+      `<div class="code-titel">${T.codeTitel}</div>` +
+      `<div class="comment">${T.kommentarT}</div>` +
+      `<div>t = np.array([${werteT.join(', ')}])</div>` +
+      `<div class="comment">${T.kommentarS}</div>` +
+      `<div>s = np.array([${werteS.join(', ')}])</div>`;
+  }
+
+  function zeigeInfo() {
+    $('v-uhr').textContent = `t = ${tSim.toFixed(2)} s`;
+    if (gemeldet > 0) {
+      const k = gemeldet - 1;
+      $('v-letzte').textContent = `t = ${zahl(k * DT)} s, s = ${zahl(strecke(k * DT))} m`;
+    } else {
+      $('v-letzte').textContent = '–';
+    }
+    $('v-anzahl').textContent = T.vonNeun(gemeldet);
+  }
+
+  function zeigeStatus(gerade) {
+    let s;
+    if (standbild) s = T.standbild;
+    else if (tSim >= T_ENDE) s = T.ende;
+    else if (laeuft) s = T.faehrt(zahl(gemeldet * DT));
+    else if (gerade && gemeldet > 0) s = T.gemeldet(zahl((gemeldet - 1) * DT), zahl(strecke((gemeldet - 1) * DT)));
+    else if (tSim === 0 && gemeldet === 0) s = T.bereit;
+    else s = T.angehalten(tSim.toFixed(2));
+    $('status').textContent = s;
+  }
+
+  function zeigeKnoepfe() {
+    const fertig = tSim >= T_ENDE;
+    if (laeuft) bStart.textContent = T.pause;
+    else if (fertig) bStart.textContent = T.nochmal;
+    else if (tSim === 0 && gemeldet === 0) bStart.textContent = T.start;
+    else bStart.textContent = T.weiter;
+    bSchritt.disabled = fertig || (laeuft && stoppBei === null);
+    bReset.disabled = tSim === 0 && gemeldet === 0;
+  }
+
+  function aktualisiere(gerade) {
+    setzeFahrzeug();
+    zeigeCode();
+    zeigeInfo();
+    zeigeStatus(gerade);
+    zeigeKnoepfe();
+  }
+
+  // Meldungen bis zur aktuellen Fahrzeit nachholen
+  function meldeBisJetzt(mitEffekt) {
+    let neu = false;
+    while (gemeldet < ANZAHL && tSim >= gemeldet * DT - 1e-9) {
+      melde(gemeldet, mitEffekt);
+      gemeldet++;
+      neu = true;
+    }
+    return neu;
+  }
+
+  function rahmen(jetzt) {
+    if (!laeuft) { letzterRahmen = null; return; }
+    if (letzterRahmen !== null) {
+      const ziel = stoppBei !== null ? stoppBei : T_ENDE;
+      tSim = Math.min(tSim + (jetzt - letzterRahmen) / 1000 * ZEITLUPE, ziel);
+    }
+    letzterRahmen = jetzt;
+    const neu = meldeBisJetzt(true);
+    const ziel = stoppBei !== null ? stoppBei : T_ENDE;
+    let gerade = false;
+    if (tSim >= ziel - 1e-12) {
+      laeuft = false;
+      gerade = stoppBei !== null;
+      stoppBei = null;
+      letzterRahmen = null;
+    }
+    aktualisiere(gerade || (neu && !laeuft));
+    if (laeuft) requestAnimationFrame(rahmen);
+  }
+
+  function starte() {
+    laeuft = true;
+    letzterRahmen = null;
+    aktualisiere(false);
+    requestAnimationFrame(rahmen);
+  }
+
+  function zuruecksetzen() {
+    laeuft = false;
+    stoppBei = null;
+    tSim = 0;
+    gemeldet = 0;
+    markenListe = [];
+    marken.replaceChildren();
+    lote.replaceChildren();
+    aktualisiere(false);
+  }
+
+  bStart.addEventListener('click', () => {
+    if (laeuft) { laeuft = false; stoppBei = null; aktualisiere(false); return; }
+    if (tSim >= T_ENDE) zuruecksetzen();
+    stoppBei = null;
+    starte();
+  });
+  bSchritt.addEventListener('click', () => {
+    if (tSim >= T_ENDE) return;
+    stoppBei = Math.min(gemeldet * DT, T_ENDE);
+    if (!laeuft) starte();
+  });
+  bReset.addEventListener('click', zuruecksetzen);
+  cLeit.addEventListener('change', () => {
+    $('applet').classList.toggle('leitsicht', cLeit.checked);
+  });
+
+  // ---------- Beschriftung und Start ----------
+  $('titel').textContent = T.titel;
+  $('anleitung').textContent = standbild ? T.anleitungStandbild : T.anleitung;
+  $('l-uhr').textContent = T.uhr;
+  $('l-letzte').textContent = T.letzte;
+  $('l-anzahl').textContent = T.anzahl;
+  $('l-leit').textContent = T.leit;
+  bSchritt.textContent = T.schritt;
+  bReset.textContent = T.reset;
+
+  if (standbild) {
+    $('steuerung').hidden = true;
+    $('applet').classList.add('leitsicht');
+    tSim = T_ENDE;
+    meldeBisJetzt(false);
+  }
+  aktualisiere(false);
+})();
+</script>
+</body>
+</html>
