@@ -15,6 +15,7 @@ const ROOT      = resolve(__dirname, '..')
 const ENTRIES = [
   { chapter: 'chapter04', name: 'sekante-tangente' },
   { chapter: 'chapter07', name: 'chap07_sec00_quiz' },
+  { chapter: 'chapter08', name: 'chap08_sec00_quiz' },
 
 ]
 
